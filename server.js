@@ -13,6 +13,9 @@ const methodOverride = require('method-override')
 
 const app = express();
 
+// server.js
+app.locals.PUBLIC_STRIPE_API_KEY = process.env.PUBLIC_STRIPE_API_KEY
+
 const mongoose = require('mongoose');
 mongoose.connect('mongodb://localhost/local', {
   useNewUrlParser: true,
