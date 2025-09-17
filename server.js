@@ -11,9 +11,15 @@ const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
 const methodOverride = require('method-override')
 
+// SEND EMAIL
+const user = {
+  email: 'marcel.barrios@students.dominican.edu',
+  name: 'Emily',
+  age: '43'
+};
+
 const app = express();
 
-// server.js
 app.locals.PUBLIC_STRIPE_API_KEY = process.env.PUBLIC_STRIPE_API_KEY
 
 const mongoose = require('mongoose');
