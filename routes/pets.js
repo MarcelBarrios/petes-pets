@@ -3,6 +3,8 @@ const upload = multer({ dest: 'uploads/' });
 const Upload = require('s3-uploader');
 const mailer = require('../utils/mailer');
 
+console.log("S3 Bucket from .env:", process.env.S3_BUCKET);
+
 const client = new Upload(process.env.S3_BUCKET, {
   aws: {
     path: 'pets/avatar',
@@ -39,31 +41,42 @@ module.exports = (app) => {
     res.render('pets-new');
   });
 
-  // CREATE PET
+  // routes/pets.js - NEW CODE
   app.post('/pets', upload.single('avatar'), (req, res, next) => {
-    var pet = new Pet(req.body);
-    pet.save(function (err) {
-      if (req.file) {
-        // Upload the images
-        client.upload(req.file.path, {}, function (err, versions, meta) {
-          if (err) { return res.status(400).send({ err: err }) };
+    // First, check if a file was uploaded
+    if (!req.file) {
+      // If not, return an error
+      return res.status(400).send({ err: "No file uploaded." });
+    }
 
-          // Pop off the -square and -standard and just use the one URL to grab the image
-          versions.forEach(function (image) {
-            var urlArray = image.url.split('-');
-            urlArray.pop();
-            var url = urlArray.join('-');
-            pet.avatarUrl = url;
-            pet.save();
-          });
-
-          res.send({ pet: pet });
-        });
-      } else {
-        res.send({ pet: pet });
+    // If a file was uploaded, let's upload it to S3
+    client.upload(req.file.path, {}, function (err, versions, meta) {
+      if (err) {
+        console.error("S3 Upload Error:", err);
+        return res.status(400).send({ err: err });
       }
-    })
-  })
+
+      // The upload was successful, now create and save the pet
+      const pet = new Pet(req.body);
+
+      // Get the base URL from the S3 response
+      const urlArray = versions[0].url.split('-');
+      urlArray.pop();
+      const url = urlArray.join('-');
+      pet.avatarUrl = url;
+
+      // Save the pet to the database
+      pet.save()
+        .then(savedPet => {
+          // Send the saved pet back to the client
+          res.send({ pet: savedPet });
+        })
+        .catch(saveErr => {
+          console.error("Database Save Error:", saveErr);
+          res.status(500).send({ err: saveErr });
+        });
+    });
+  });
 
   // SHOW PET
   app.get('/pets/:id', (req, res) => {
@@ -97,21 +110,23 @@ module.exports = (app) => {
     });
   });
 
-  // SEARCH PET
-  app.get('/search', (req, res) => {
+  // SEARCH
+  app.get('/search', function (req, res) {
+    Pet
+      .find(
+        { $text: { $search: req.query.term } },
+        { score: { $meta: "textScore" } }
+      )
+      .sort({ score: { $meta: 'textScore' } })
+      .limit(20)
+      .exec(function (err, pets) {
+        if (err) { return res.status(400).send(err) }
 
-    const term = new RegExp(req.query.term, 'i')
-
-    const page = req.query.page || 1
-    Pet.paginate(
-      {
-        $or: [
-          { 'name': term },
-          { 'species': term }
-        ]
-      },
-      { page: page }).then((results) => {
-        res.render('pets-index', { pets: results.docs, pagesCount: results.pages, currentPage: page, term: req.query.term });
+        if (req.header('Content-Type') == 'application/json') {
+          return res.json({ pets: pets });
+        } else {
+          return res.render('pets-index', { pets: pets, term: req.query.term });
+        }
       });
   });
 
